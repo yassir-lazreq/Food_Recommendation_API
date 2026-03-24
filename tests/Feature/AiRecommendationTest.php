@@ -62,7 +62,7 @@ class AiRecommendationTest extends TestCase
                     [
                         'plate_id' => $plate->id,
                         'score' => 93,
-                        'reason' => 'High protein and compatible with your profile.',
+                        'warning_message' => '',
                     ],
                 ],
             ]);
@@ -70,10 +70,7 @@ class AiRecommendationTest extends TestCase
         $this->app->instance(GeminiRecommendationService::class, $serviceMock);
         Sanctum::actingAs($user);
 
-        $response = $this->postJson('/api/ai/recommendations', [
-            'prompt' => 'Need a high protein lunch',
-            'limit' => 3,
-        ]);
+        $response = $this->postJson('/api/ai/recommendations', []);
 
         $response
             ->assertOk()
@@ -81,5 +78,29 @@ class AiRecommendationTest extends TestCase
             ->assertJsonPath('count', 1)
             ->assertJsonPath('recommendations.0.score', 93)
             ->assertJsonPath('recommendations.0.plate.id', $plate->id);
+    }
+
+    public function test_rejects_prompt_in_request_payload(): void
+    {
+        $user = User::factory()->create();
+        Sanctum::actingAs($user);
+
+        $response = $this->postJson('/api/ai/recommendations', [
+            'prompt' => 'I should not be allowed to send this.',
+        ]);
+
+        $response->assertStatus(422);
+    }
+
+    public function test_rejects_limit_in_request_payload(): void
+    {
+        $user = User::factory()->create();
+        Sanctum::actingAs($user);
+
+        $response = $this->postJson('/api/ai/recommendations', [
+            'limit' => 10,
+        ]);
+
+        $response->assertStatus(422);
     }
 }

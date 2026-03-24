@@ -4,7 +4,6 @@ namespace App\Services\AI;
 
 use App\Models\Plate;
 use Gemini;
-use Illuminate\Support\Collection;
 use Throwable;
 
 class GeminiRecommendationService
@@ -20,9 +19,9 @@ class GeminiRecommendationService
     /**
      * @param array<int, Plate> $plates
      * @param array<int, string> $dietaryTags
-     * @return array{source:string,recommendations:array<int,array{plate_id:int,score:int,reason:string}>}
+        * @return array{source:string,recommendations:array<int,array{plate_id:int,score:int,warning_message:string}>}
      */
-    public function recommend(array $plates, array $dietaryTags, ?string $prompt, int $limit): array
+    public function recommend(array $plates, array $dietaryTags, int $limit): array
     {
         if ($plates === []) {
             return [
@@ -41,7 +40,7 @@ class GeminiRecommendationService
             $client = Gemini::client($apiKey);
             $result = $client
                 ->generativeModel(model: 'gemini-2.0-flash')
-                ->generateContent($this->buildPrompt($plates, $dietaryTags, $prompt, $limit));
+                ->generateContent($this->buildPrompt($plates, $dietaryTags, $limit));
 
             $recommendations = $this->parseModelResponse((string) $result->text(), $plates, $limit);
 
@@ -65,7 +64,7 @@ class GeminiRecommendationService
      * @param array<int, Plate> $plates
      * @param array<int, string> $dietaryTags
      */
-    private function buildPrompt(array $plates, array $dietaryTags, ?string $prompt, int $limit): string
+    private function buildPrompt(array $plates, array $dietaryTags, int $limit): string
     {
         $candidatePlates = array_map(function (Plate $plate): array {
             $ingredientTags = $plate->ingredients
@@ -84,28 +83,41 @@ class GeminiRecommendationService
             ];
         }, $plates);
 
+        $defaultRecommendationPrompt = (string) config(
+            'services.gemini.default_recommendation_prompt',
+            'Recommend the best plates based on dietary compatibility and healthy balance.'
+        );
+
         $payload = [
-            'dietary_tags' => array_values(array_unique($dietaryTags)),
-            'user_prompt' => $prompt,
+            'task' => $defaultRecommendationPrompt,
+            'user_restrictions' => array_values(array_unique($dietaryTags)),
             'limit' => $limit,
             'plates' => $candidatePlates,
         ];
 
-        return "You are a food recommendation engine.\n"
+        return "Analyze the nutritional compatibility between each dish and the user's dietary restrictions.\n"
+            . "Tag mapping rules:\n"
+            . "- \"vegan\" restriction conflicts with: contains_meat, contains_lactose\n"
+            . "- \"no_sugar\" restriction conflicts with: contains_sugar\n"
+            . "- \"no_cholesterol\" restriction conflicts with: contains_cholesterol\n"
+            . "- \"gluten_free\" restriction conflicts with: contains_gluten\n"
+            . "- \"no_lactose\" restriction conflicts with: contains_lactose\n"
+            . "Calculate score for each plate: start at 100, subtract 25 for each conflict found.\n"
+            . "If score < 50, warning_message must be in French. If score >= 50, warning_message must be an empty string.\n"
             . "Return ONLY valid JSON with this shape:"
-            . '{"recommendations":[{"plate_id":1,"score":0,"reason":"..."}]}'
-            . "\nRules:"
-            . "\n- score must be an integer from 0 to 100"
-            . "\n- reason must be concise"
-            . "\n- only use plate_id values from the input"
-            . "\n- return at most the requested limit"
+            . '{"recommendations":[{"plate_id":1,"score":100,"warning_message":""}]}'
+            . "\nRules:\n"
+            . "- score must be an integer from 0 to 100\n"
+            . "- only use plate_id values from the input\n"
+            . "- return at most the requested limit\n"
+            . "- sort recommendations from highest score to lowest score\n"
             . "\nInput:\n"
             . json_encode($payload, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
     }
 
     /**
      * @param array<int, Plate> $plates
-     * @return array<int, array{plate_id:int,score:int,reason:string}>
+     * @return array<int, array{plate_id:int,score:int,warning_message:string}>
      */
     private function parseModelResponse(string $rawText, array $plates, int $limit): array
     {
@@ -127,7 +139,7 @@ class GeminiRecommendationService
                 return [
                     'plate_id' => (int) $row['plate_id'],
                     'score' => max(0, min(100, (int) $row['score'])),
-                    'reason' => isset($row['reason']) ? trim((string) $row['reason']) : 'Recommended by AI.',
+                    'warning_message' => isset($row['warning_message']) ? trim((string) $row['warning_message']) : '',
                 ];
             })
             ->filter(fn (?array $row) => $row !== null)
@@ -163,7 +175,7 @@ class GeminiRecommendationService
     /**
      * @param array<int, Plate> $plates
      * @param array<int, string> $dietaryTags
-     * @return array<int, array{plate_id:int,score:int,reason:string}>
+     * @return array<int, array{plate_id:int,score:int,warning_message:string}>
      */
     private function heuristicRecommendations(array $plates, array $dietaryTags, int $limit): array
     {
@@ -176,19 +188,26 @@ class GeminiRecommendationService
                     ->all();
 
                 $conflicts = collect($dietaryTags)
-                    ->map(fn (string $dietTag) => self::CONFLICT_MAP[$dietTag] ?? null)
-                    ->filter(fn ($requiredAbsentTag) => $requiredAbsentTag !== null && in_array($requiredAbsentTag, $ingredientTags, true))
+                    ->map(function (string $dietTag): ?array {
+                        return match ($dietTag) {
+                            'vegan' => ['contains_meat', 'contains_lactose'],
+                            default => isset(self::CONFLICT_MAP[$dietTag]) ? [self::CONFLICT_MAP[$dietTag]] : null,
+                        };
+                    })
+                    ->filter(fn (?array $requiredAbsentTags) => $requiredAbsentTags !== null)
+                    ->flatMap(fn (array $requiredAbsentTags) => $requiredAbsentTags)
+                    ->filter(fn (string $requiredAbsentTag) => in_array($requiredAbsentTag, $ingredientTags, true))
                     ->values()
                     ->all();
 
-                $score = max(0, 100 - (count($conflicts) * 20));
+                $score = max(0, 100 - (count($conflicts) * 25));
 
                 return [
                     'plate_id' => $plate->id,
                     'score' => $score,
-                    'reason' => count($conflicts) === 0
-                        ? 'Matches your dietary profile.'
-                        : 'Some dietary conflicts were detected.',
+                    'warning_message' => $score < 50
+                        ? 'Ce plat n\'est pas compatible avec vos restrictions alimentaires.'
+                        : '',
                 ];
             })
             ->sortByDesc('score')

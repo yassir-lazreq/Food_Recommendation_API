@@ -37,6 +37,16 @@ return [
 
     'gemini' => [
         'api_key' => env('GEMINI_API_KEY'),
+        'recommendation_limit' => env('AI_RECOMMENDATION_LIMIT', 5),
+        'default_recommendation_prompt' => env(
+            'AI_DEFAULT_RECOMMENDATION_PROMPT',
+            'Score each plate on:\n'
+            . '1. Dietary Compatibility (40%): Does the plate match the user\'s dietary tags? Higher score if no conflicts.\n'
+            . '2. Nutritional Balance (40%): Is the plate healthy based on ingredients? Prioritize variety, proteins, veggies, low sugar if requested.\n'
+            . '3. Price Reasonableness (20%): Is the price fair? Lower is better.\n'
+            . 'Calculate final score = (dietary_score * 0.4) + (nutritional_score * 0.4) + (price_score * 0.2).\n'
+            . 'Sort plates from highest to lowest final score. Return the top recommendations.'
+        ),
     ],
 
 ];

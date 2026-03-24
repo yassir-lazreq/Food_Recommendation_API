@@ -18,13 +18,13 @@ class AiRecommendationController extends Controller
     public function recommend(Request $request): JsonResponse
     {
         $validated = $request->validate([
-            'prompt' => ['nullable', 'string', 'max:500'],
-            'limit' => ['sometimes', 'integer', 'min:1', 'max:10'],
+            'prompt' => ['prohibited'],
+            'limit' => ['prohibited'],
             'plate_ids' => ['sometimes', 'array'],
             'plate_ids.*' => ['integer', 'exists:plates,id'],
         ]);
 
-        $limit = $validated['limit'] ?? 5;
+        $limit = (int) config('services.gemini.recommendation_limit', 5);
 
         $plates = Plate::query()
             ->with(['category', 'ingredients'])
@@ -39,7 +39,6 @@ class AiRecommendationController extends Controller
         $serviceResult = $this->geminiRecommendationService->recommend(
             plates: $plates->all(),
             dietaryTags: $request->user()->dietary_tags ?? [],
-            prompt: $validated['prompt'] ?? null,
             limit: $limit,
         );
 
@@ -55,7 +54,7 @@ class AiRecommendationController extends Controller
                 return [
                     'plate' => $plate,
                     'score' => $recommendation['score'],
-                    'reason' => $recommendation['reason'],
+                    'warning_message' => $recommendation['warning_message'] ?? '',
                 ];
             })
             ->filter(fn (?array $item) => $item !== null)
