@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Api\AuthController;
+use App\Http\Controllers\Api\AiRecommendationController;
 use App\Http\Controllers\Api\CategoryController;
 use App\Http\Controllers\Api\IngredientController;
 use App\Http\Controllers\Api\PlateController;
@@ -23,6 +24,7 @@ Route::middleware('auth:sanctum')->group(function (): void {
 
     Route::get('/plates', [PlateController::class, 'index']);
     Route::get('/plates/{plate}', [PlateController::class, 'show']);
+    Route::post('/ai/recommendations', [AiRecommendationController::class, 'recommend']);
 
     Route::middleware('admin')->group(function (): void {
         Route::post('/categories', [CategoryController::class, 'store']);
