@@ -6,6 +6,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Plate extends Model
 {
@@ -17,6 +18,10 @@ class Plate extends Model
         'price',
         'image',
         'is_available',
+        'ai_health_score',
+        'ai_conflict_tags',
+        'ai_warning_fr',
+        'ai_analyzed_at',
         'category_id',
     ];
 
@@ -25,6 +30,8 @@ class Plate extends Model
         return [
             'price' => 'decimal:2',
             'is_available' => 'boolean',
+            'ai_conflict_tags' => 'array',
+            'ai_analyzed_at' => 'datetime',
         ];
     }
 
@@ -36,5 +43,10 @@ class Plate extends Model
     public function ingredients(): BelongsToMany
     {
         return $this->belongsToMany(Ingredient::class);
+    }
+
+    public function recommendations(): HasMany
+    {
+        return $this->hasMany(Recommendation::class);
     }
 }

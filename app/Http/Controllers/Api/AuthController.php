@@ -26,6 +26,7 @@ class AuthController extends Controller
             'name' => ['required', 'string', 'max:255'],
             'email' => ['required', 'email', 'max:255', 'unique:users,email'],
             'password' => ['required', 'string', 'min:8', 'confirmed'],
+            'role' => ['required', 'string', Rule::in(['client', 'admin'])],
             'dietary_tags' => ['sometimes', 'array'],
             'dietary_tags.*' => ['string', Rule::in(self::DIETARY_TAGS)],
         ]);
@@ -34,6 +35,8 @@ class AuthController extends Controller
             'name' => $validated['name'],
             'email' => $validated['email'],
             'password' => $validated['password'],
+            'role' => $validated['role'],
+            'is_admin' => $validated['role'] === 'admin',
             'dietary_tags' => array_values(array_unique($validated['dietary_tags'] ?? [])),
         ]);
 

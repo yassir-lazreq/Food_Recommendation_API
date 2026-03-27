@@ -1,11 +1,13 @@
 <?php
 
 use App\Http\Controllers\Api\AuthController;
+use App\Http\Controllers\Api\AdminStatsController;
 use App\Http\Controllers\Api\AiRecommendationController;
 use App\Http\Controllers\Api\CategoryController;
 use App\Http\Controllers\Api\IngredientController;
 use App\Http\Controllers\Api\PlateController;
 use App\Http\Controllers\Api\ProfileController;
+use App\Http\Controllers\Api\RecommendationController;
 use Illuminate\Support\Facades\Route;
 
 Route::post('/register', [AuthController::class, 'register']);
@@ -24,9 +26,14 @@ Route::middleware('auth:sanctum')->group(function (): void {
 
     Route::get('/plates', [PlateController::class, 'index']);
     Route::get('/plates/{plate}', [PlateController::class, 'show']);
-    Route::post('/ai/recommendations', [AiRecommendationController::class, 'recommend']);
+    Route::get('/ai/recommendations', [AiRecommendationController::class, 'recommend']);
+    Route::post('/recommendations/analyze/{plate_id}', [RecommendationController::class, 'analyze']);
+    Route::get('/recommendations', [RecommendationController::class, 'index']);
+    Route::get('/recommendations/{plate_id}', [RecommendationController::class, 'show']);
 
     Route::middleware('admin')->group(function (): void {
+        Route::get('/admin/stats', [AdminStatsController::class, 'index']);
+
         Route::post('/categories', [CategoryController::class, 'store']);
         Route::put('/categories/{category}', [CategoryController::class, 'update']);
         Route::delete('/categories/{category}', [CategoryController::class, 'destroy']);

@@ -22,12 +22,14 @@ class AiRecommendationController extends Controller
             'limit' => ['prohibited'],
             'plate_ids' => ['sometimes', 'array'],
             'plate_ids.*' => ['integer', 'exists:plates,id'],
+        ], [], [
+            'plate_ids' => 'comma-separated plate IDs',
         ]);
 
         $limit = (int) config('services.gemini.recommendation_limit', 5);
 
         $plates = Plate::query()
-            ->with(['category', 'ingredients'])
+            ->select(['id', 'name', 'description', 'price', 'image', 'is_available', 'category_id', 'ai_health_score', 'ai_conflict_tags', 'ai_warning_fr'])
             ->where('is_available', true)
             ->when(
                 array_key_exists('plate_ids', $validated),
@@ -42,7 +44,17 @@ class AiRecommendationController extends Controller
             limit: $limit,
         );
 
-        $platesById = $plates->keyBy('id');
+        $recommendedPlateIds = collect($serviceResult['recommendations'])
+            ->pluck('plate_id')
+            ->values()
+            ->all();
+
+        $platesById = Plate::query()
+            ->with(['category', 'ingredients'])
+            ->whereIn('id', $recommendedPlateIds)
+            ->get()
+            ->keyBy('id');
+
         $recommendations = collect($serviceResult['recommendations'])
             ->map(function (array $recommendation) use ($platesById): ?array {
                 $plate = $platesById->get($recommendation['plate_id']);

@@ -4,35 +4,52 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\Plate;
+use App\Models\Recommendation;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
 class PlateController extends Controller
 {
-    private const CONFLICT_MAP = [
-        'vegan' => 'contains_meat',
-        'no_sugar' => 'contains_sugar',
-        'no_cholesterol' => 'contains_cholesterol',
-        'gluten_free' => 'contains_gluten',
-        'no_lactose' => 'contains_lactose',
-    ];
-
     public function index(Request $request): JsonResponse
     {
         $user = $request->user();
 
         $plates = Plate::query()
             ->with(['category', 'ingredients'])
+            ->when(
+                ! $request->has('is_available'),
+                fn ($query) => $query->where('is_available', true)
+            )
+            ->when(
+                $request->has('is_available'),
+                fn ($query) => $query->where('is_available', filter_var($request->query('is_available'), FILTER_VALIDATE_BOOL))
+            )
             ->orderBy('name')
-            ->get()
-            ->map(function (Plate $plate) use ($user): array {
-                return [
-                    ...$plate->toArray(),
-                    'recommendation' => $this->buildRecommendation($user->dietary_tags ?? [], $plate),
-                ];
-            });
+            ->get();
 
-        return response()->json($plates);
+        $latestByPlate = Recommendation::query()
+            ->where('user_id', $user->id)
+            ->whereIn('plate_id', $plates->pluck('id')->all())
+            ->latest()
+            ->get()
+            ->unique('plate_id')
+            ->keyBy('plate_id');
+
+        $response = $plates->map(function (Plate $plate) use ($latestByPlate): array {
+            $recommendation = $latestByPlate->get($plate->id);
+
+            return [
+                ...$plate->toArray(),
+                'recommendation' => [
+                    'score' => $recommendation?->score,
+                    'label' => $recommendation?->label,
+                    'warning_message' => $recommendation?->warning_message ?? '',
+                    'status' => $recommendation?->status ?? 'processing',
+                ],
+            ];
+        });
+
+        return response()->json($response);
     }
 
     public function store(Request $request): JsonResponse
@@ -66,9 +83,20 @@ class PlateController extends Controller
     {
         $plate->load(['category', 'ingredients']);
 
+        $recommendation = Recommendation::query()
+            ->where('user_id', $request->user()->id)
+            ->where('plate_id', $plate->id)
+            ->latest()
+            ->first();
+
         return response()->json([
             'plate' => $plate,
-            'recommendation' => $this->buildRecommendation($request->user()->dietary_tags ?? [], $plate),
+            'recommendation' => [
+                'score' => $recommendation?->score,
+                'label' => $recommendation?->label,
+                'warning_message' => $recommendation?->warning_message ?? '',
+                'status' => $recommendation?->status ?? 'processing',
+            ],
         ]);
     }
 
@@ -110,26 +138,4 @@ class PlateController extends Controller
         ]);
     }
 
-    private function buildRecommendation(array $dietaryTags, Plate $plate): array
-    {
-        $ingredientTags = $plate->ingredients
-            ->flatMap(fn ($ingredient) => $ingredient->tags ?? [])
-            ->filter(fn ($tag) => is_string($tag))
-            ->values()
-            ->all();
-
-        $conflicts = collect($dietaryTags)
-            ->map(fn (string $dietTag) => self::CONFLICT_MAP[$dietTag] ?? null)
-            ->filter(fn ($requiredAbsentTag) => $requiredAbsentTag !== null && in_array($requiredAbsentTag, $ingredientTags, true))
-            ->values()
-            ->all();
-
-        $score = max(0, 100 - (count($conflicts) * 20));
-
-        return [
-            'score' => $score,
-            'is_compatible' => count($conflicts) === 0,
-            'conflicting_tags' => $conflicts,
-        ];
-    }
 }

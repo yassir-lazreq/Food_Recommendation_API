@@ -140,6 +140,7 @@ class RecommendationTestDataSeeder extends Seeder
             [
                 'name' => 'Admin User',
                 'password' => Hash::make('password123'),
+                'role' => 'admin',
                 'is_admin' => true,
                 'dietary_tags' => [],
             ]
@@ -150,6 +151,7 @@ class RecommendationTestDataSeeder extends Seeder
             [
                 'name' => 'Vegan User',
                 'password' => Hash::make('password123'),
+                'role' => 'client',
                 'is_admin' => false,
                 'dietary_tags' => ['vegan'],
             ]
@@ -160,6 +162,7 @@ class RecommendationTestDataSeeder extends Seeder
             [
                 'name' => 'No Sugar User',
                 'password' => Hash::make('password123'),
+                'role' => 'client',
                 'is_admin' => false,
                 'dietary_tags' => ['no_sugar'],
             ]
@@ -170,6 +173,7 @@ class RecommendationTestDataSeeder extends Seeder
             [
                 'name' => 'Gluten Free User',
                 'password' => Hash::make('password123'),
+                'role' => 'client',
                 'is_admin' => false,
                 'dietary_tags' => ['gluten_free'],
             ]
